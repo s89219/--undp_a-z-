@@ -1,0 +1,914 @@
+# ![Logo](chrome/app/theme/chromium/product_logo_64.png) Chromium
+
+Chromium is an open-source browser project that aims to build a safer, faster,
+and more stable way for all users to experience the web.
+
+The project's web site is https://www.chromium.org.
+
+To check out the source code locally, don't use `git clone`! Instead,
+follow [the instructions on how to get the code](docs/get_the_code.md).
+
+Documentation in the source is rooted in [docs/README.md](docs/README.md).
+
+Learn how to [Get Around the Chromium Source Code Directory Structure
+](https://www.chromium.org/developers/how-tos/getting-around-the-chrome-source-code).
+
+For historical reasons, there are some small top level directories. Now the
+guidance is that new top level directories are for product (e.g. Chrome,
+Android WebView, Ash). Even if these products have multiple executables, the
+code should be in subdirectories of the product.
+
+If you found a bug, please file it at https://crbug.com/new.
+vimeo.com/406424805#wp-prồ
+
+mobisystems.com/file-commander-premium/892_47-соmmаndеr⁴-ߠ-#H5061
+
+s89219.github.io/-Z-E-R-O-E--#05
+
+cộng đồng dựa trên các quyền cơ bản của con người
+
+"Cеntеrрrо_892,4.Μ HТТ - dpp/simply_lift GitHub Wiki
+github-wiki-see.page/m/dpp/simply_lift/wiki/Cеntеrрrо_892,4.Μ-HТТ-#H4
+
+linkedin.com/legal/copyright-policy#892
+stackoverflow.com/legal/cookie-policy#892
+stackoverflow.com/legal/terms-of-service/public#892 repository-images.githubusercontent.com/489401847/18a8d2d1-a9c0-48d9-b414-3b527c12c24e#4 repository-images.githubusercontent.com/492292951/77dd9314-2c85-4b96-a8cb-11f08de147af#4 https://nhadat.cafeland.vn/moi-gioi/huy-tuan-tran-tuan-id-0339360792-186412.html#892
+ global.oup.com/privacy?cc=892
+
+github.com/dpp/simply_lift/wiki/-Сеոtеrрrօ_892⁴-߀З.Μ-HТߠ-
+
+
+ 
+ 
+S89219
+/
+-RAGE_892-
+
+Browse files
+aws-ס-tnkh.MWM
+ 892-19⁴
+
+S89219 committed on May 17, 2022 Verified
+1 parent 290e367 commit 35d7c32d5ac501a25a8d705290983f7022a3460d
+Showing 1 changed file with 95 additions and 0 deletions.
+SplitUnified
+ 95  
+.github/workflows/סaws-tnkh.MWM
+@@ -0,0 +1,95 @@
+# This workflow will build and push a new container image to Amazon ECR,
+# and then will deploy a new task definition to Amazon ECS, when there is a push to the 892-19⁴ branch.
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of the `ECR_REPOSITORY` environment variable in the workflow below with your repository's name.
+#    Replace the value of the `AWS_REGION` environment variable in the workflow below with your repository's region.
+#
+# 2. Create an ECS task definition, an ECS cluster, and an ECS service.
+#    For example, follow the Getting Started guide on the ECS console:
+#      https://us-east-2.console.aws.amazon.com/ecs/home?region=us-east-2#/firstRun
+#    Replace the value of the `ECS_SERVICE` environment variable in the workflow below with the name you set for the Amazon ECS service.
+#    Replace the value of the `ECS_CLUSTER` environment variable in the workflow below with the name you set for the cluster.
+#
+# 3. Store your ECS task definition as a JSON file in your repository.
+#    The format should follow the output of `aws ecs register-task-definition --generate-cli-skeleton`.
+#    Replace the value of the `ECS_TASK_DEFINITION` environment variable in the workflow below with the path to the JSON file.
+#    Replace the value of the `CONTAINER_NAME` environment variable in the workflow below with the name of the container
+#    in the `containerDefinitions` section of the task definition.
+#
+# 4. Store an IAM user access key in GitHub Actions secrets named `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+#    See the documentation for each action used below for the recommended IAM policies for this IAM user,
+#    and best practices on handling the access key credentials.
+
+name: Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - 892-19⁴
+
+env:
+  AWS_REGION: MY_AWS_REGION                   # set this to your preferred AWS region, e.g. us-west-1
+  ECR_REPOSITORY: MY_ECR_REPOSITORY           # set this to your Amazon ECR repository name
+  ECS_SERVICE: MY_ECS_SERVICE                 # set this to your Amazon ECS service name
+  ECS_CLUSTER: MY_ECS_CLUSTER                 # set this to your Amazon ECS cluster name
+  ECS_TASK_DEFINITION: MY_ECS_TASK_DEFINITION # set this to the path to your Amazon ECS task definition
+                                               # file, e.g. .aws/task-definition.json
+  CONTAINER_NAME: MY_CONTAINER_NAME           # set this to the name of the container in the
+                                               # containerDefinitions section of your task definition
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build a docker container and
+        # push it to ECR so that it can
+        # be deployed to ECS.
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION }}
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+0 comments on commit 35d7c32
+ Unlock conversation
+
+Write Preview
+Add heading textAdd bold text, <Ctrl+b>Add italic text, <Ctrl+i>
+Add a quote, <Ctrl+Shift+.>Add code, <Ctrl+e>Add a link, <Ctrl+k>
+Add a bulleted list, <Ctrl+Shift+8>Add a numbered list, <Ctrl+Shift+7>Add a task list, <Ctrl+Shift+l>
+Directly mention a user or team
+Reference an issue, pull request, or discussion
+Add saved reply
+
+Chọn tệpKhông có tệp nào được chọn
+Attach files by dragging & dropping, selecting or pasting them.
+Styling with Markdown is supported
+Comment on this commit
+Unsubscribe
+ You’re receiving notifications because you’re watching this repository.
+Footer
+© 2023 GitHub, Inc.
+
+bit.ly/3CPsHZC#yt4
+
+bit.ly/3iJATUC#r
+
+bit.ly/3J9QojF#05
+
+vimeo.com/406424805#wp-prồ
+
+bit.ly/3QM9iPm#05
+
+vimeo.com/406424805#wp-prồ
+
+mobisystems.com/file-commander-premium/892_47-соmmаndеr⁴-ߠ-#H5061
+
+s89219.github.io/-Z-E-R-O-E--#05
+
+cộng đồng dựa trên các quyền cơ bản của con người
+
+"Cеntеrрrо_892,4.Μ HТТ - dpp/simply_lift GitHub Wiki
+github-wiki-see.page/m/dpp/simply_lift/wiki/Cеntеrрrо_892,4.Μ-HТТ-#H4
+
+linkedin.com/legal/copyright-policy#892
+stackoverflow.com/legal/cookie-policy#892
+stackoverflow.com/legal/terms-of-service/public#892 repository-images.githubusercontent.com/489401847/18a8d2d1-a9c0-48d9-b414-3b527c12c24e#4 repository-images.githubusercontent.com/492292951/77dd9314-2c85-4b96-a8cb-11f08de147af#4 https://nhadat.cafeland.vn/moi-gioi/huy-tuan-tran-tuan-id-0339360792-186412.html#892
+ global.oup.com/privacy?cc=892
+
+github.com/dpp/simply_lift/wiki/-Сеոtеrрrօ_892⁴-߀З.Μ-HТߠ-
+
+
+ 
+ 
+S89219
+/
+-RAGE_892-
+
+Browse files
+aws-ס-tnkh.MWM
+ 892-19⁴
+
+S89219 committed on May 17, 2022 Verified
+1 parent 290e367 commit 35d7c32d5ac501a25a8d705290983f7022a3460d
+Showing 1 changed file with 95 additions and 0 deletions.
+SplitUnified
+ 95  
+.github/workflows/סaws-tnkh.MWM
+@@ -0,0 +1,95 @@
+# This workflow will build and push a new container image to Amazon ECR,
+# and then will deploy a new task definition to Amazon ECS, when there is a push to the 892-19⁴ branch.
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of the `ECR_REPOSITORY` environment variable in the workflow below with your repository's name.
+#    Replace the value of the `AWS_REGION` environment variable in the workflow below with your repository's region.
+#
+# 2. Create an ECS task definition, an ECS cluster, and an ECS service.
+#    For example, follow the Getting Started guide on the ECS console:
+#      https://us-east-2.console.aws.amazon.com/ecs/home?region=us-east-2#/firstRun
+#    Replace the value of the `ECS_SERVICE` environment variable in the workflow below with the name you set for the Amazon ECS service.
+#    Replace the value of the `ECS_CLUSTER` environment variable in the workflow below with the name you set for the cluster.
+#
+# 3. Store your ECS task definition as a JSON file in your repository.
+#    The format should follow the output of `aws ecs register-task-definition --generate-cli-skeleton`.
+#    Replace the value of the `ECS_TASK_DEFINITION` environment variable in the workflow below with the path to the JSON file.
+#    Replace the value of the `CONTAINER_NAME` environment variable in the workflow below with the name of the container
+#    in the `containerDefinitions` section of the task definition.
+#
+# 4. Store an IAM user access key in GitHub Actions secrets named `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+#    See the documentation for each action used below for the recommended IAM policies for this IAM user,
+#    and best practices on handling the access key credentials.
+
+name: Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - 892-19⁴
+
+env:
+  AWS_REGION: MY_AWS_REGION                   # set this to your preferred AWS region, e.g. us-west-1
+  ECR_REPOSITORY: MY_ECR_REPOSITORY           # set this to your Amazon ECR repository name
+  ECS_SERVICE: MY_ECS_SERVICE                 # set this to your Amazon ECS service name
+  ECS_CLUSTER: MY_ECS_CLUSTER                 # set this to your Amazon ECS cluster name
+  ECS_TASK_DEFINITION: MY_ECS_TASK_DEFINITION # set this to the path to your Amazon ECS task definition
+                                               # file, e.g. .aws/task-definition.json
+  CONTAINER_NAME: MY_CONTAINER_NAME           # set this to the name of the container in the
+                                               # containerDefinitions section of your task definition
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build a docker container and
+        # push it to ECR so that it can
+        # be deployed to ECS.
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION }}
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+0 comments on commit 35d7c32
+ Unlock conversation
+
+Write Preview
+Add heading textAdd bold text, <Ctrl+b>Add italic text, <Ctrl+i>
+Add a quote, <Ctrl+Shift+.>Add code, <Ctrl+e>Add a link, <Ctrl+k>
+Add a bulleted list, <Ctrl+Shift+8>Add a numbered list, <Ctrl+Shift+7>Add a task list, <Ctrl+Shift+l>
+Directly mention a user or team
+Reference an issue, pull request, or discussion
+Add saved reply
+
+Chọn tệpKhông có tệp nào được chọn
+Attach files by dragging & dropping, selecting or pasting them.
+Styling with Markdown is supported
+Comment on this commit
+Unsubscribe
+ You’re receiving notifications because you’re watching this repository.
+Footer
+© 2023 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+aws-ס-tnkh.MWM · S89219/-RAGE_892-@35d7c32"
+ 
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+aws-ס-tnkh.MWM · S89219/-RAGE_892-@35d7c32"
+https://github.com/S89219/chromium/security/code-scanning
+
+
+bit.ly/3CPsHZC#yt4
+
+bit.ly/3iJATUC#r
+
+bit.ly/3J9QojF#05
+
+vimeo.com/406424805#wp-prồ
+
+bit.ly/3QM9iPm#05
+
+vimeo.com/406424805#wp-prồ
+
+mobisystems.com/file-commander-premium/892_47-соmmаndеr⁴-ߠ-#H5061
+
+s89219.github.io/-Z-E-R-O-E--#05
+
+cộng đồng dựa trên các quyền cơ bản của con người
+
+"Cеntеrрrо_892,4.Μ HТТ - dpp/simply_lift GitHub Wiki
+github-wiki-see.page/m/dpp/simply_lift/wiki/Cеntеrрrо_892,4.Μ-HТТ-#H4
+
+linkedin.com/legal/copyright-policy#892
+stackoverflow.com/legal/cookie-policy#892
+stackoverflow.com/legal/terms-of-service/public#892 repository-images.githubusercontent.com/489401847/18a8d2d1-a9c0-48d9-b414-3b527c12c24e#4 repository-images.githubusercontent.com/492292951/77dd9314-2c85-4b96-a8cb-11f08de147af#4 https://nhadat.cafeland.vn/moi-gioi/huy-tuan-tran-tuan-id-0339360792-186412.html#892
+ global.oup.com/privacy?cc=892
+
+github.com/dpp/simply_lift/wiki/-Сеոtеrрrօ_892⁴-߀З.Μ-HТߠ-
+
+
+ 
+ 
+S89219
+/
+-RAGE_892-
+
+Browse files
+aws-ס-tnkh.MWM
+ 892-19⁴
+
+S89219 committed on May 17, 2022 Verified
+1 parent 290e367 commit 35d7c32d5ac501a25a8d705290983f7022a3460d
+Showing 1 changed file with 95 additions and 0 deletions.
+SplitUnified
+ 95  
+.github/workflows/סaws-tnkh.MWM
+@@ -0,0 +1,95 @@
+# This workflow will build and push a new container image to Amazon ECR,
+# and then will deploy a new task definition to Amazon ECS, when there is a push to the 892-19⁴ branch.
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of the `ECR_REPOSITORY` environment variable in the workflow below with your repository's name.
+#    Replace the value of the `AWS_REGION` environment variable in the workflow below with your repository's region.
+#
+# 2. Create an ECS task definition, an ECS cluster, and an ECS service.
+#    For example, follow the Getting Started guide on the ECS console:
+#      https://us-east-2.console.aws.amazon.com/ecs/home?region=us-east-2#/firstRun
+#    Replace the value of the `ECS_SERVICE` environment variable in the workflow below with the name you set for the Amazon ECS service.
+#    Replace the value of the `ECS_CLUSTER` environment variable in the workflow below with the name you set for the cluster.
+#
+# 3. Store your ECS task definition as a JSON file in your repository.
+#    The format should follow the output of `aws ecs register-task-definition --generate-cli-skeleton`.
+#    Replace the value of the `ECS_TASK_DEFINITION` environment variable in the workflow below with the path to the JSON file.
+#    Replace the value of the `CONTAINER_NAME` environment variable in the workflow below with the name of the container
+#    in the `containerDefinitions` section of the task definition.
+#
+# 4. Store an IAM user access key in GitHub Actions secrets named `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+#    See the documentation for each action used below for the recommended IAM policies for this IAM user,
+#    and best practices on handling the access key credentials.
+
+name: Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - 892-19⁴
+
+env:
+  AWS_REGION: MY_AWS_REGION                   # set this to your preferred AWS region, e.g. us-west-1
+  ECR_REPOSITORY: MY_ECR_REPOSITORY           # set this to your Amazon ECR repository name
+  ECS_SERVICE: MY_ECS_SERVICE                 # set this to your Amazon ECS service name
+  ECS_CLUSTER: MY_ECS_CLUSTER                 # set this to your Amazon ECS cluster name
+  ECS_TASK_DEFINITION: MY_ECS_TASK_DEFINITION # set this to the path to your Amazon ECS task definition
+                                               # file, e.g. .aws/task-definition.json
+  CONTAINER_NAME: MY_CONTAINER_NAME           # set this to the name of the container in the
+                                               # containerDefinitions section of your task definition
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build a docker container and
+        # push it to ECR so that it can
+        # be deployed to ECS.
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION }}
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+0 comments on commit 35d7c32
+ Unlock conversation
+
+Write Preview
+Add heading textAdd bold text, <Ctrl+b>Add italic text, <Ctrl+i>
+Add a quote, <Ctrl+Shift+.>Add code, <Ctrl+e>Add a link, <Ctrl+k>
+Add a bulleted list, <Ctrl+Shift+8>Add a numbered list, <Ctrl+Shift+7>Add a task list, <Ctrl+Shift+l>
+Directly mention a user or team
+Reference an issue, pull request, or discussion
+Add saved reply
+
+Chọn tệpKhông có tệp nào được chọn
+Attach files by dragging & dropping, selecting or pasting them.
+Styling with Markdown is supported
+Comment on this commit
+Unsubscribe
+ You’re receiving notifications because you’re watching this repository.
+Footer
+© 2023 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+aws-ס-tnkh.MWM · S89219/-RAGE_892-@35d7c32"
+ 
+Support S89219's open source work https://github.com/sponsors/S89219/dashboard
+
+
+M
+Đối Nậu - Đối Quại
+https://raw.githubusercontent.com/S89219/-892-/7ca8b4f5494668387d058863e70c1f41adb5767d/' 
+
+mobisystems.com/file-commander-premium/892_47.Μ-HТT#06
+
+https://8020.net/distributorlookup/index/search/  
+
+https://user-images.githubusercontent.com/93700294/207431528-4ace2789-bfe9-47bd-b0f5-b846bf3682ee.gif
+
+
+
+
+https://whois-referral.toolforge.org/gateway.py?lookup=true&ip=103.199.42.21
+
+
+
+user-images.githubusercontent.com/93700294/211181882-024c1d91-627c-4724-a168-45aabeb36fe3.png
+
+
+
+user-images.githubusercontent.com/93700294/211181900-1c96f26c-0e56-42b1-aa7b-584b6f48b18f.png
+
+
+user-images.githubusercontent.com/93700294/211181907-92e8dcd9-ae51-465d-bf04-6d2aab921290.png
+
+
+
+user-images.githubusercontent.com/93700294/211181910-3f26ede7-45c7-4d29-862f-3b87dd40f47c.png
+
+
+
+user-images.githubusercontent.com/93700294/211181911-fa062dd2-ef6e-4123-9f0f-f1a8ffc3ce90.png
+
+
+
+user-images.githubusercontent.com/93700294/211181913-600dacd1-0013-4012-b15c-f5d938e4eebd.png
+
+
+
+user-images.githubusercontent.com/93700294/211181914-975164ef-cef6-4308-8168-c595dfaaa9bb.png
+
+
+
+user-images.githubusercontent.com/93700294/211181915-d6b5a3a7-8071-4a9b-8ca9-0fa43553d8ad.png
+
+
+
+user-images.githubusercontent.com/93700294/211181917-3c7b2a40-3214-4f4d-a653-5ee90dc6a424.png
+
+
+
+user-images.githubusercontent.com/93700294/211181919-c67f8479-6974-4fe3-a9c0-28ca42a2cc4d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181920-939d7ae8-5488-4d26-9e13-262b6939b9cf.png
+
+
+user-images.githubusercontent.com/93700294/211181923-3eac4929-c5b3-47c0-8b46-39224748c816.png
+
+user-images.githubusercontent.com/93700294/211181927-93e577bd-318b-4aef-bbdf-540fa1c96856.png
+
+
+
+user-images.githubusercontent.com/93700294/211181931-d19e3076-0305-422e-9f34-453e52a49102.png
+
+
+
+user-images.githubusercontent.com/93700294/211181932-e370a860-238f-40fa-a6ac-08f2c8f064d6.png
+
+
+
+user-images.githubusercontent.com/93700294/211181933-14bec721-1f82-4286-be28-0dc58635d9b4.png
+
+
+
+user-images.githubusercontent.com/93700294/211181934-06e9ed14-f3a8-4196-9310-6dad65cc9d90.png
+
+
+
+user-images.githubusercontent.com/93700294/211181935-cb459b3f-016b-4bbb-a831-ec98d8459e4f.png
+
+
+
+user-images.githubusercontent.com/93700294/211181938-fb0cf687-80ad-4ab4-b391-9ac22f6816d1.png
+
+
+
+user-images.githubusercontent.com/93700294/211181939-5f311747-c838-4c17-a069-81e64d4e6e45.png
+
+
+user-images.githubusercontent.com/93700294/211181942-e9822e52-c519-42dc-9a78-6a292f78c11d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181943-4268a7c7-5038-4806-8fba-237e893b268d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181945-c3ec821f-bb05-416a-aed4-07285302cd17.png
+
+
+
+user-images.githubusercontent.com/93700294/211181946-f1a30bc6-12d6-4f09-bc00-d08712594bec.png
+
+
+user-images.githubusercontent.com/93700294/211181948-8497339f-b5a3-4d5c-acc5-679e4e606a5b.png
+
+
+
+user-images.githubusercontent.com/93700294/211181950-d2db6ef8-8148-46e4-a44e-e78420b64303.png
+
+
+
+user-images.githubusercontent.com/93700294/211181951-368dd971-0bf9-4d47-98e3-a177ac347017.png
+
+
+user-images.githubusercontent.com/93700294/211181952-8222632c-7194-407b-9090-
+
+
+
+user-images.githubusercontent.com/93700294/211181882-024c1d91-627c-4724-a168-45aabeb36fe3.png
+
+
+user-images.githubusercontent.com/93700294/211181900-1c96f26c-0e56-42b1-aa7b-584b6f48b18f.png
+
+
+
+user-images.githubusercontent.com/93700294/211181907-92e8dcd9-ae51-465d-bf04-6d2aab921290.png
+
+
+user-images.githubusercontent.com/93700294/211181910-3f26ede7-45c7-4d29-862f-3b87dd40f47c.png
+
+
+
+user-images.githubusercontent.com/93700294/211181911-fa062dd2-ef6e-4123-9f0f-f1a8ffc3ce90.png
+
+
+user-images.githubusercontent.com/93700294/211181913-600dacd1-0013-4012-b15c-f5d938e4eebd.png
+
+
+
+user-images.githubusercontent.com/93700294/211181914-975164ef-cef6-4308-8168-c595dfaaa9bb.png
+
+
+user-images.githubusercontent.com/93700294/211181915-d6b5a3a7-8071-4a9b-8ca9-0fa43553d8ad.png
+
+
+user-images.githubusercontent.com/93700294/211181917-3c7b2a40-3214-4f4d-a653-5ee90dc6a424.png
+
+
+user-images.githubusercontent.com/93700294/211181919-c67f8479-6974-4fe3-a9c0-28ca42a2cc4d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181920-939d7ae8-5488-4d26-9e13-262b6939b9cf.png
+
+
+
+user-images.githubusercontent.com/93700294/211181923-3eac4929-c5b3-47c0-8b46-39224748c816.png
+
+
+
+user-images.githubusercontent.com/93700294/211181927-93e577bd-318b-4aef-bbdf-540fa1c96856.png
+
+
+user-images.githubusercontent.com/93700294/211181931-d19e3076-0305-422e-9f34-453e52a49102.png
+
+
+
+user-images.githubusercontent.com/93700294/211181932-e370a860-238f-40fa-a6ac-08f2c8f064d6.png
+
+
+
+user-images.githubusercontent.com/93700294/211181933-14bec721-1f82-4286-be28-0dc58635d9b4.png
+
+
+
+user-images.githubusercontent.com/93700294/211181934-06e9ed14-f3a8-4196-9310-6dad65cc9d90.png
+
+
+user-images.githubusercontent.com/93700294/211181935-cb459b3f-016b-4bbb-a831-ec98d8459e4f.png
+
+
+user-images.githubusercontent.com/93700294/211181938-fb0cf687-80ad-4ab4-b391-9ac22f6816d1.png
+
+
+
+
+user-images.githubusercontent.com/93700294/211181939-5f311747-c838-4c17-a069-81e64d4e6e45.png
+
+
+
+user-images.githubusercontent.com/93700294/211181942-e9822e52-c519-42dc-9a78-6a292f78c11d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181943-4268a7c7-5038-4806-8fba-237e893b268d.png
+
+
+
+user-images.githubusercontent.com/93700294/211181945-c3ec821f-bb05-416a-aed4-07285302cd17.png
+
+
+
+
+user-images.githubusercontent.com/93700294/211181946-f1a30bc6-12d6-4f09-bc00-d08712594bec.png
+
+
+
+
+user-images.githubusercontent.com/93700294/211181948-8497339f-b5a3-4d5c-acc5-679e4e606a5b.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181950-d2db6ef8-8148-46e4-a44e-e78420b64303.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181951-368dd971-0bf9-4d47-98e3-a177ac347017.png)
+
+
+
+
+(https://user-images.githubusercontent.com/93700294/211181882-024c1d91-627c-4724-a168-45aabeb36fe3.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181900-1c96f26c-0e56-42b1-aa7b-584b6f48b18f.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181907-92e8dcd9-ae51-465d-bf04-6d2aab921290.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181910-3f26ede7-45c7-4d29-862f-3b87dd40f47c.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181911-fa062dd2-ef6e-4123-9f0f-f1a8ffc3ce90.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181913-600dacd1-0013-4012-b15c-f5d938e4eebd.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181914-975164ef-cef6-4308-8168-c595dfaaa9bb.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181915-d6b5a3a7-8071-4a9b-8ca9-0fa43553d8ad.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181917-3c7b2a40-3214-4f4d-a653-5ee90dc6a424.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181919-c67f8479-6974-4fe3-a9c0-28ca42a2cc4d.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181920-939d7ae8-5488-4d26-9e13-262b6939b9cf.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181923-3eac4929-c5b3-47c0-8b46-39224748c816.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181927-93e577bd-318b-4aef-bbdf-540fa1c96856.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181931-d19e3076-0305-422e-9f34-453e52a49102.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181932-e370a860-238f-40fa-a6ac-08f2c8f064d6.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181933-14bec721-1f82-4286-be28-0dc58635d9b4.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181934-06e9ed14-f3a8-4196-9310-6dad65cc9d90.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181935-cb459b3f-016b-4bbb-a831-ec98d8459e4f.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181938-fb0cf687-80ad-4ab4-b391-9ac22f6816d1.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181939-5f311747-c838-4c17-a069-81e64d4e6e45.png)
+
+
+
+
+user-images.githubusercontent.com/93700294/211181942-e9822e52-c519-42dc-9a78-6a292f78c11d.png)
+
+
+user-images.githubusercontent.com/93700294/211181943-4268a7c7-5038-4806-8fba-237e893b268d.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181945-c3ec821f-bb05-416a-aed4-07285302cd17.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181946-f1a30bc6-12d6-4f09-bc00-d08712594bec.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181948-8497339f-b5a3-4d5c-acc5-679e4e606a5b.png)
+
+
+
+user-images.githubusercontent.com/93700294/211181950-d2db6ef8-8148-46e4-a44e-e78420b64303.png
+
+
+user-images.githubusercontent.com/93700294/211181951-368dd971-0bf9-4d47-98e3-a177ac347017.png
+
+
+
+user-images.githubusercontent.com/93700294/211181952-8222632c-7194-407b-9090-23106132a1f8.png
+
+
+images.githubusercontent.com/93700294/211181952-8222632c-7194-407b-9090-23106132a1f8.png)
+23106132a1f8.png)
+
+.
+
+
+
+
+<!DOCTYPE html>https://raw.githubusercontent.com/S89219/T-id-/b70b6d79d09232c00f7544a6624f54da3e52d2ca/fullname%D1%87S.THT
+<html lang="vi" data-color-mode="auto" data-light-theme="light" data-dark-theme="dark_dimmed" >
+  <đầu>
+    <meta charset="utf-8">
+  <link rel="dns-prefetch" href="https://github.githubassets.com">
+  <link rel="dns-prefetch" href="https://avatars.githubusercontent.com">
+  <link rel="dns-prefetch" href="https://github-cloud.s3.amazonaws.com">
+  <link rel="dns-prefetch" href="https://user-images.githubusercontent.com/">
+  <link rel="preconnect" href="https://github.githubassets.com" crossorigin>
+  <link rel="preconnect" href="https://avatars.githubusercontent.com">
+
+
+
+  <link crossorigin="anonymous" media="all" integration="sha512-IVVa++hW3DBYJnNsmMMiUwt96BJ1mjUpGNDRWeui5BY1iA04E58M5NujgomnZU9R9DB+H99IlE7a+9b5XlO25g==" rel="stylesheet" href="https://github.githubassets.com/assets/light- 21555afbe856.css" /><link crossorigin="anonymous" media="all" integration="sha512-cZa7DZqvMBwD236uzEunO/G1dvw8/QftyT2UtLWKQFEy0z0eq0R5WPwqVME+3NSZG1YaLJAaIqtU+m0zWf/6SQ= href=" rel="stylesheet"github .githubassets.com/assets/dark_dimmed-7196bb0d9aaf.css" /><link data-color-theme="dark" crossorigin="anonymous" media="all"
+
+
+
+ https://github.com/S89219/chromium/security/code-scanning
